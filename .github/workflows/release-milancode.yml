@@ -1,0 +1,173 @@
+name: Release MilanCode
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - Cargo.toml
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release-milancode
+  cancel-in-progress: false
+
+jobs:
+  metadata:
+    name: Resolve release metadata
+    runs-on: ubuntu-latest
+    outputs:
+      should_release: ${{ steps.version.outputs.should_release }}
+      version: ${{ steps.version.outputs.version }}
+      tag: ${{ steps.version.outputs.tag }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 2
+
+      - name: Read workspace version and detect version bump
+        id: version
+        shell: bash
+        run: |
+          read_version() {
+            local file="$1"
+            awk '
+            /^\[workspace\.package\]$/ { in_section=1; next }
+            /^\[/ && $0 != "[workspace.package]" { in_section=0 }
+            in_section && $1 == "version" {
+              gsub(/"/, "", $3)
+              print $3
+              exit
+            }
+          ' "$file"
+          }
+
+          version="$(read_version Cargo.toml)"
+
+          if [[ -z "$version" ]]; then
+            echo "Failed to read version from Cargo.toml" >&2
+            exit 1
+          fi
+
+          should_release="true"
+          if [[ "${{ github.event_name }}" == "push" ]]; then
+            previous_version="$(git show "${{ github.event.before }}:Cargo.toml" 2>/dev/null | awk '
+              /^\[workspace\.package\]$/ { in_section=1; next }
+              /^\[/ && $0 != "[workspace.package]" { in_section=0 }
+              in_section && $1 == "version" {
+                gsub(/"/, "", $3)
+                print $3
+                exit
+              }
+            ')"
+            if [[ -n "$previous_version" && "$previous_version" == "$version" ]]; then
+              should_release="false"
+            fi
+          fi
+
+          echo "should_release=$should_release" >> "$GITHUB_OUTPUT"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "tag=v$version" >> "$GITHUB_OUTPUT"
+
+  build:
+    name: Build ${{ matrix.label }}
+    needs: metadata
+    if: needs.metadata.outputs.should_release == 'true'
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            target: x86_64-unknown-linux-gnu
+            label: linux-x64
+          - os: macos-latest
+            target: aarch64-apple-darwin
+            label: macos-arm64
+          - os: windows-latest
+            target: x86_64-pc-windows-msvc
+            label: windows-x64
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+
+      - name: Cache cargo registry and target
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: .
+
+      - name: Build release binary
+        shell: bash
+        env:
+          MILANCODE_BUILD_TARGET: ${{ matrix.target }}
+        run: |
+          cargo build \
+            --release \
+            -p milancode \
+            --target "${{ matrix.target }}"
+
+      - name: Prepare release binary
+        shell: bash
+        run: |
+          target="${{ matrix.target }}"
+          binary_name="milancode-${target}"
+          source_path="target/${target}/release/milancode"
+          if [[ "${{ runner.os }}" == "Windows" ]]; then
+            source_path="${source_path}.exe"
+            binary_name="${binary_name}.exe"
+          fi
+          cp "$source_path" "$binary_name"
+          if [[ "${{ runner.os }}" != "Windows" ]]; then
+            chmod +x "$binary_name"
+          fi
+
+      - name: Upload release binary
+        uses: actions/upload-artifact@v4
+        with:
+          name: milancode-${{ matrix.target }}
+          path: milancode-${{ matrix.target }}*
+          if-no-files-found: error
+
+  release:
+    name: Create GitHub release
+    needs: [metadata, build]
+    if: needs.metadata.outputs.should_release == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download build artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: release-artifacts
+
+      - name: Generate SHA256SUMS
+        shell: bash
+        run: |
+          cd release-artifacts
+          find . -type f ! -name 'SHA256SUMS' -print0 \
+            | sort -z \
+            | xargs -0 shasum -a 256 \
+            | sed 's# \*\\?\\.*/#  #g' \
+            > SHA256SUMS
+
+      - name: Publish release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ needs.metadata.outputs.tag }}
+          name: MilanCode ${{ needs.metadata.outputs.version }}
+          generate_release_notes: true
+          draft: false
+          prerelease: false
+          overwrite_files: true
+          files: |
+            release-artifacts/**/milancode-*
+            release-artifacts/SHA256SUMS

@@ -1,0 +1,11 @@
+target/
+.omx/
+.clawd-agents/
+.milancode
+# MilanCode local artifacts
+.milancode/settings.local.json
+.milancode/sessions/
+.milancode/agents/
+.milancode/mcp/
+.milancode/
+.sandbox*
