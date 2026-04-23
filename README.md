@@ -8,7 +8,8 @@ It supports:
 
 MilanCode is designed around an interactive REPL, local tools, managed sessions, MCP servers, and a user-controlled permission model. Web retrieval is provider-agnostic and always runs through Exa.
 
-<img width="1571" height="504" alt="CleanShot 2026-04-21 at 21 54 52" src="https://github.com/user-attachments/assets/21eeb498-7f84-4c72-8fc2-718176ddf0ad" />
+<img width="1403" height="480" alt="CleanShot 2026-04-22 at 23 55 58" src="https://github.com/user-attachments/assets/2443c3b6-f460-4e1b-b46e-55273eeb3201" />
+
 
 Check the [Changelog](CHANGELOG.md) for update/patch notes
 
