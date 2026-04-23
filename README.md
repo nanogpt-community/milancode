@@ -1,6 +1,6 @@
 # MilanCode
 
-MilanCode is a rust based agentic coding harness for Nano-GPT - A clone of (pebble)[https://github.com/nanogpt-community/pebble]
+MilanCode is a rust based agentic coding harness for Nano-GPT - A clone of [pebble](https://github.com/nanogpt-community/pebble)
 
 It supports:
 
